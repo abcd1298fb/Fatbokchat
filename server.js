@@ -4,6 +4,12 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+
+// Tarayıcıdan linke girildiğinde hata vermemesi için
+app.get('/', (req, res) => {
+  res.send('FATBOK Chat Sunucusu Aktif ve Çalışıyor!');
+});
+
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -14,7 +20,6 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   console.log('Bir kullanıcı bağlandı:', socket.id);
 
-  // Kullanıcıdan gelen mesajı odadaki herkese gönder
   socket.on('chatMessage', (data) => {
     io.emit('chatMessage', {
       username: data.username.substring(0, 20),
