@@ -5,7 +5,6 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
-// Tarayıcıdan linke girildiğinde hata vermemesi için
 app.get('/', (req, res) => {
   res.send('FATBOK Chat Sunucusu Aktif ve Çalışıyor!');
 });
@@ -17,44 +16,47 @@ const io = new Server(server, {
   }
 });
 
-// Sabitlenen mesajı hafızada tutmak için değişken
 let pinnedMessage = null;
+let isSlowModeActive = false; // Yavaş mod durumu (Varsayılan kapalı)
 
 io.on('connection', (socket) => {
   console.log('Bir kullanıcı bağlandı:', socket.id);
 
+  // Yeni bağlananlara mevcut durumu bildir
+  socket.emit('pinnedMessage', pinnedMessage);
+  socket.emit('slowModeStatus', isSlowModeActive);
+
   // 1. Normal Mesaj Gönderimi
   socket.on('chatMessage', (data) => {
     io.emit('chatMessage', {
-      id: Date.now(), // Mesajları silmek için benzersiz bir ID ekledik
+      id: Date.now(),
       username: data.username.substring(0, 20),
       message: data.message.substring(0, 250),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
   });
 
-  // 2. Mesajı Sabitleme Olayı
+  // 2. Yavaş Modu Açma / Kapatma (Sadece Admin Tetikler)
+  socket.on('toggleSlowMode', (status) => {
+    isSlowModeActive = status;
+    io.emit('slowModeStatus', isSlowModeActive); // Herkese bildir
+  });
+
+  // 3. Mesajı Sabitleme Olayı
   socket.on('pinMessage', (text) => {
     pinnedMessage = text;
-    io.emit('pinnedMessage', pinnedMessage); // Herkese sabitlenen mesajı ilet
+    io.emit('pinnedMessage', pinnedMessage);
   });
 
-  // 3. Mesajı Sabitlemeden Kaldırma Olayı
+  // 4. Sabitlenen Mesajı Kaldırma
   socket.on('unpinMessage', () => {
     pinnedMessage = null;
-    io.emit('pinnedMessage', null); // Herkese sabitlemenin kalktığını bildir
-  });
-
-  // 4. Yeni bağlanan kullanıcıya sabitli mesajı gönder
-  socket.on('requestPinnedMessage', () => {
-    if (pinnedMessage) {
-      socket.emit('pinnedMessage', pinnedMessage);
-    }
+    io.emit('pinnedMessage', null);
   });
 
   // 5. Herkes İçin Mesaj Silme Olayı
   socket.on('deleteMessage', (msgId) => {
-    io.emit('deleteMessage', msgId); // Belirli ID'li mesajı silmeleri için sinyal gönder
+    io.emit('deleteMessage', msgId);
   });
 
   socket.on('disconnect', () => {
