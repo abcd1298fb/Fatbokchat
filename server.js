@@ -5,6 +5,9 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
+// Admin şifresi artık sadece sunucuda ve güvenli bir şekilde yer alıyor
+const ADMIN_SECRET_PASS = "fatbok2026";
+
 app.get('/', (req, res) => {
   res.send('FATBOK Chat Sunucusu Aktif ve Çalışıyor!');
 });
@@ -25,6 +28,15 @@ io.on('connection', (socket) => {
   // Yeni bağlananlara mevcut durumu bildir
   socket.emit('pinnedMessage', pinnedMessage);
   socket.emit('slowModeStatus', isSlowModeActive);
+
+  // Admin Giriş Doğrulama Olayı
+  socket.on('verifyAdmin', (enteredPass, callback) => {
+    if (enteredPass === ADMIN_SECRET_PASS) {
+      callback({ success: true });
+    } else {
+      callback({ success: false });
+    }
+  });
 
   // 1. Normal Mesaj Gönderimi
   socket.on('chatMessage', (data) => {
