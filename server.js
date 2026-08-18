@@ -22,6 +22,10 @@ const io = new Server(server, {
 let pinnedMessage = null;
 let isSlowModeActive = false; // Yavaş mod durumu (Varsayılan kapalı)
 
+// --- Geçmiş Mesajlar Belleği ---
+let messageHistory = [];
+const MAX_HISTORY_SIZE = 50; // Bellekte tutulacak maksimum mesaj sayısı
+
 // --- Admin Dashboard & İstatistik Değişkenleri ---
 let activeUsersCount = 0;
 const recentLogs = [];
@@ -41,9 +45,12 @@ io.on('connection', (socket) => {
   console.log('Bir kullanıcı bağlandı:', socket.id, `(Aktif: ${activeUsersCount})`);
   addLog(`Kullanıcı bağlandı (${socket.id.substring(0, 6)}...)`);
 
-  // Yeni bağlananlara mevcut durumu bildir
-  socket.emit('pinnedMessage', pinnedMessage);
-  socket.emit('slowModeStatus', isSlowModeActive);
+  // Yeni bağlanan kullanıcılara mevcut durumu ve GEÇMİŞ MESAJLARI bildir
+  socket.emit('initChat', {
+    messages: messageHistory,
+    pinned: pinnedMessage,
+    slowMode: isSlowModeActive
+  });
   
   // Tüm kullanıcılara/adminlere güncel aktif kullanıcı sayısını ve logları bildir
   io.emit('statsUpdate', { activeUsersCount, recentLogs });
@@ -71,12 +78,21 @@ io.on('connection', (socket) => {
 
     addLog(`[Mesaj] ${username}: ${message.substring(0, 25)}...`);
 
-    io.emit('chatMessage', {
+    const newMessage = {
       id: Date.now(),
       username,
       message,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
+    };
+
+    // Mesajı hafızadaki geçmişe kaydet ve limiti koru
+    messageHistory.push(newMessage);
+    if (messageHistory.length > MAX_HISTORY_SIZE) {
+      messageHistory.shift();
+    }
+
+    // Herkese yayınla
+    io.emit('chatMessage', newMessage);
   });
 
   // 2. Yavaş Modu Açma / Kapatma (Sadece Admin Tetikler)
@@ -102,6 +118,9 @@ io.on('connection', (socket) => {
 
   // 5. Herkes İçin Mesaj Silme Olayı
   socket.on('deleteMessage', (msgId) => {
+    // Mesaj silindiğinde geçmişten de çıkaralım ki F5 atıldığında tekrar gelmesin
+    messageHistory = messageHistory.filter(m => m.id !== msgId);
+
     addLog(`Bir mesaj silindi (ID: ${msgId}).`);
     io.emit('deleteMessage', msgId);
   });
