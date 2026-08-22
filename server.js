@@ -116,12 +116,15 @@ io.on('connection', (socket) => {
     io.emit('pinnedMessage', null);
   });
 
-  // 5. Herkes İçin Mesaj Silme Olayı
+  // 5. Herkes İçin Mesaj Silme Olayı (DÜZELTİLDİ)
   socket.on('deleteMessage', (msgId) => {
-    // Mesaj silindiğinde geçmişten de çıkaralım ki F5 atıldığında tekrar gelmesin
-    messageHistory = messageHistory.filter(m => m.id !== msgId);
+    // Gelen ID'yi sayıya çevirerek hafızadan güvenle siliyoruz (F5 atıldığında geri gelmez)
+    const numericId = Number(msgId);
+    messageHistory = messageHistory.filter(m => m.id !== numericId);
 
     addLog(`Bir mesaj silindi (ID: ${msgId}).`);
+    
+    // Bağlı OLAN HERKESİN ekranından silinmesi için tüm istemcilere bildiriyoruz
     io.emit('deleteMessage', msgId);
   });
 
