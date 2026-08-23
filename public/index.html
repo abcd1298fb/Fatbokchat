@@ -82,7 +82,7 @@
         const roomID = "ortak-oda-1";
         socket.emit('join-room', roomID);
 
-        let isRemoteAction = false; // Uzaktan gelen komutları ayırt etmek için
+        let isRemoteAction = false;
 
         const diziVerileri = {
             "La Casa de Papel - 1. Sezon": [
@@ -124,7 +124,7 @@
         function playHLS(url) {
             if (Hls.isSupported()) {
                 const hls = new Hls({
-                    maxBufferLength: 30, // Tampon belleği optimize et
+                    maxBufferLength: 30,
                     maxMaxBufferLength: 60
                 });
                 hls.loadSource(url);
@@ -151,7 +151,7 @@
             playHLS(url);
         });
 
-        // --- KARARLI SENKRONİZASYON ---
+        // --- SENKRONİZASYON OLAYLARI ---
 
         video.addEventListener('play', () => {
             if (isRemoteAction) return;
@@ -167,6 +167,14 @@
             if (isRemoteAction) return;
             socket.emit('seek-video', { roomID, currentTime: video.currentTime });
         });
+
+        // Oynatma hızı değiştiğinde tetiklenir
+        video.addEventListener('ratechange', () => {
+            if (isRemoteAction) return;
+            socket.emit('change-rate', { roomID, playbackRate: video.playbackRate });
+        });
+
+        // --- UZAKTAN GELEN KOMUTLAR ---
 
         socket.on('remote-play', (currentTime) => {
             isRemoteAction = true;
@@ -187,6 +195,13 @@
         socket.on('remote-seek', (currentTime) => {
             isRemoteAction = true;
             video.currentTime = currentTime;
+            setTimeout(() => { isRemoteAction = false; }, 500);
+        });
+
+        // Uzaktan hız değişimi geldiğinde
+        socket.on('remote-rate-change', (playbackRate) => {
+            isRemoteAction = true;
+            video.playbackRate = playbackRate;
             setTimeout(() => { isRemoteAction = false; }, 500);
         });
 
