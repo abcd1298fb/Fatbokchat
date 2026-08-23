@@ -4,7 +4,10 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  path: '/socket.io',
+  transports: ['websocket', 'polling']
+});
 
 // Statik dosyaları public klasöründen sunuyoruz
 app.use(express.static('public'));
@@ -43,7 +46,13 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 3000;
-server.listen(PORT, () => {
-    console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
-});
+// Yerel geliştirme ortamı için (Lokalde test ederken)
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = 3000;
+    server.listen(PORT, () => {
+        console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
+    });
+}
+
+// Vercel Serverless yapısı için dışarı aktarılıyor
+module.exports = server;
