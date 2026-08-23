@@ -4,141 +4,46 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server);
 
-// Admin şifresi artık sadece sunucuda ve güvenli bir şekilde yer alıyor
-const ADMIN_SECRET_PASS = "fatbok2026";
-
-app.get('/', (req, res) => {
-  res.send('FATBOK Chat Sunucusu Aktif ve Çalışıyor!');
-});
-
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
-
-let pinnedMessage = null;
-let isSlowModeActive = false; // Yavaş mod durumu (Varsayılan kapalı)
-
-// --- Geçmiş Mesajlar Belleği ---
-let messageHistory = [];
-const MAX_HISTORY_SIZE = 50; // Bellekte tutulacak maksimum mesaj sayısı
-
-// --- Admin Dashboard & İstatistik Değişkenleri ---
-let activeUsersCount = 0;
-const recentLogs = [];
-
-function addLog(message) {
-  const logEntry = { 
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
-    message 
-  };
-  recentLogs.unshift(logEntry); // En yeni log başa eklenir
-  if (recentLogs.length > 50) recentLogs.pop(); // Bellekte en fazla son 50 log tutulur
-}
-// ----------------------------------------------
+// Statik dosyaları public klasöründen sunuyoruz
+app.use(express.static('public'));
 
 io.on('connection', (socket) => {
-  activeUsersCount++;
-  console.log('Bir kullanıcı bağlandı:', socket.id, `(Aktif: ${activeUsersCount})`);
-  addLog(`Kullanıcı bağlandı (${socket.id.substring(0, 6)}...)`);
+    console.log('Bir kullanıcı bağlandı:', socket.id);
 
-  // Yeni bağlanan kullanıcılara mevcut durumu ve GEÇMİŞ MESAJLARI bildir
-  socket.emit('initChat', {
-    messages: messageHistory,
-    pinned: pinnedMessage,
-    slowMode: isSlowModeActive
-  });
-  
-  // Tüm kullanıcılara/adminlere güncel aktif kullanıcı sayısını ve logları bildir
-  io.emit('statsUpdate', { activeUsersCount, recentLogs });
+    // Kullanıcı ortak odaya katıldığında
+    socket.on('join-room', (roomID) => {
+        socket.join(roomID);
+        console.log(`Kullanıcı ${roomID} odasına katıldı.`);
+    });
 
-  // Admin Giriş Doğrulama Olayı
-  socket.on('verifyAdmin', (enteredPass, callback) => {
-    if (enteredPass === ADMIN_SECRET_PASS) {
-      addLog(`Admin girişi başarılı (${socket.id.substring(0, 6)}...)`);
-      callback({ success: true, stats: { activeUsersCount, recentLogs } });
-    } else {
-      addLog(`Başarısız admin giriş denemesi (${socket.id.substring(0, 6)}...)`);
-      callback({ success: false });
-    }
-  });
+    // M3U8 linki değiştirildiğinde diğerine bildir
+    socket.on('change-source', ({ roomID, url }) => {
+        socket.to(roomID).emit('remote-change-source', url);
+    });
 
-  // Admin panelinin anlık veri çekmesi için olay
-  socket.on('getAdminStats', () => {
-    socket.emit('adminStatsData', { activeUsersCount, recentLogs });
-  });
+    // Video oynatıldığında
+    socket.on('play-video', ({ roomID, currentTime }) => {
+        socket.to(roomID).emit('remote-play', currentTime);
+    });
 
-  // 1. Normal Mesaj Gönderimi
-  socket.on('chatMessage', (data) => {
-    const username = data.username.substring(0, 20);
-    const message = data.message.substring(0, 250);
+    // Video durdurulduğunda
+    socket.on('pause-video', ({ roomID, currentTime }) => {
+        socket.to(roomID).emit('remote-pause', currentTime);
+    });
 
-    addLog(`[Mesaj] ${username}: ${message.substring(0, 25)}...`);
+    // Video ileri/geri sarıldığında
+    socket.on('seek-video', ({ roomID, currentTime }) => {
+        socket.to(roomID).emit('remote-seek', currentTime);
+    });
 
-    const newMessage = {
-      id: Date.now(),
-      username,
-      message,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    // Mesajı hafızadaki geçmişe kaydet ve limiti koru
-    messageHistory.push(newMessage);
-    if (messageHistory.length > MAX_HISTORY_SIZE) {
-      messageHistory.shift();
-    }
-
-    // Herkese yayınla
-    io.emit('chatMessage', newMessage);
-  });
-
-  // 2. Yavaş Modu Açma / Kapatma (Sadece Admin Tetikler)
-  socket.on('toggleSlowMode', (status) => {
-    isSlowModeActive = status;
-    addLog(`Yavaş mod ${status ? 'açıldı' : 'kapatıldı'}.`);
-    io.emit('slowModeStatus', isSlowModeActive); // Herkese bildir
-  });
-
-  // 3. Mesajı Sabitleme Olayı
-  socket.on('pinMessage', (text) => {
-    pinnedMessage = text;
-    addLog(`Bir mesaj sabitlendi.`);
-    io.emit('pinnedMessage', pinnedMessage);
-  });
-
-  // 4. Sabitlenen Mesajı Kaldırma
-  socket.on('unpinMessage', () => {
-    pinnedMessage = null;
-    addLog(`Sabitlenen mesaj kaldırıldı.`);
-    io.emit('pinnedMessage', null);
-  });
-
-  // 5. Herkes İçin Mesaj Silme Olayı (DÜZELTİLDİ)
-  socket.on('deleteMessage', (msgId) => {
-    // Gelen ID'yi sayıya çevirerek hafızadan güvenle siliyoruz (F5 atıldığında geri gelmez)
-    const numericId = Number(msgId);
-    messageHistory = messageHistory.filter(m => m.id !== numericId);
-
-    addLog(`Bir mesaj silindi (ID: ${msgId}).`);
-    
-    // Bağlı OLAN HERKESİN ekranından silinmesi için tüm istemcilere bildiriyoruz
-    io.emit('deleteMessage', msgId);
-  });
-
-  socket.on('disconnect', () => {
-    activeUsersCount--;
-    console.log('Kullanıcı ayrıldı:', socket.id, `(Aktif: ${activeUsersCount})`);
-    addLog(`Kullanıcı ayrıldı (${socket.id.substring(0, 6)}...)`);
-    
-    // Ayrılma sonrasında sayaçları güncelle
-    io.emit('statsUpdate', { activeUsersCount, recentLogs });
-  });
+    socket.on('disconnect', () => {
+        console.log('Kullanıcı ayrıldı:', socket.id);
+    });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 server.listen(PORT, () => {
-  console.log(`Chat sunucusu ${PORT} portunda çalışıyor.`);
+    console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
 });
