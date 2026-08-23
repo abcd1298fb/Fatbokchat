@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Senkronize M3U8 İzleme</title>
+    <title>Senkronize La Casa de Papel İzleme Odası</title>
     <!-- HLS.js kütüphanesi -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
@@ -18,24 +18,24 @@
         h1 { margin-bottom: 10px; font-size: 1.5rem; }
         .controls {
             margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
         }
-        input {
-            padding: 10px;
-            width: 320px;
+        select, button {
+            padding: 10px 15px;
             border-radius: 4px;
             border: none;
             outline: none;
             font-size: 14px;
         }
+        select { background: #222; color: #fff; border: 1px solid #444; }
         button {
-            padding: 10px 18px;
-            border-radius: 4px;
-            border: none;
             background: #007bff;
             color: #fff;
             cursor: pointer;
             font-weight: bold;
-            margin-left: 5px;
         }
         button:hover { background: #0056b3; }
         .video-container {
@@ -53,11 +53,20 @@
 </head>
 <body>
 
-    <h1>Birlikte M3U8 İzleme Odası</h1>
+    <h1>La Casa de Papel - Senkronize İzleme Odası</h1>
     
     <div class="controls">
-        <input type="text" id="m3u8Url" placeholder="M3U8 akış linkini buraya yapıştır...">
-        <button id="loadBtn">Videoyu Yükle</button>
+        <!-- Sezon Seçimi -->
+        <select id="seasonSelect">
+            <option value="">Sezon Seçin</option>
+        </select>
+
+        <!-- Bölüm Seçimi -->
+        <select id="episodeSelect" disabled>
+            <option value="">Önce Sezon Seçin</option>
+        </select>
+
+        <button id="loadBtn">Bölümü Başlat</button>
     </div>
 
     <div class="video-container">
@@ -67,48 +76,89 @@
     <!-- Socket.io istemci kütüphanesi -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Vercel üzerinde socket bağlantısını kararlı tutmak için transport ayarları eklendi
         const socket = io({
             transports: ['websocket', 'polling']
         });
 
         const video = document.getElementById('video');
-        const urlInput = document.getElementById('m3u8Url');
+        const seasonSelect = document.getElementById('seasonSelect');
+        const episodeSelect = document.getElementById('episodeSelect');
         const loadBtn = document.getElementById('loadBtn');
 
-        const roomID = "ortak-oda-1"; // İki kişilik sabit oda
+        const roomID = "ortak-oda-1";
         socket.emit('join-room', roomID);
 
-        let isUpdatingFromRemote = false; // Sonsuz döngüyü önlemek için bayrak
+        let isUpdatingFromRemote = false;
 
-        // M3U8 linkini oynatma fonksiyonu
+        // --- DİZİ LİSTESİ (La Casa de Papel Bölümleri) ---
+        const diziVerileri = {
+            "La Casa de Papel - 1. Sezon": [
+                { baslik: "8. Bölüm", url: "https://s429.rapidrame.com/hls2/01/00012/atxktqn9qw0e_,l,.urlset/master.m3u8?t=Gdg3331gbcCc6gzNHRI2nu_0m0NN8j5-SsfOsHGQ20A&s=1787509702&e=14400&f=61539&i=0.0&sp=0&n=4jyob6dgynsl6d1g" },
+                { baslik: "9. Bölüm", url: "https://s429.rapidrame.com/hls2/01/00012/afllini891lf_,l,.urlset/master.m3u8?t=M97pzD_5IGWpr2HVuhJXutGk9On1wTOa8q48M_fzEeI&s=1787509746&e=14400&f=61684&i=0.0&sp=0&n=9gec5hoy45wahlao" },
+                { baslik: "10. Bölüm", url: "https://s429.rapidrame.com/hls2/01/00012/ncxad8r5guje_,l,.urlset/master.m3u8?t=p9_7XI-clbfRVZsIgcuaScisD3vGShj1sfftbnXTd08&s=1787509763&e=14400&f=61715&i=0.0&sp=0&n=4w1dc8y2z4z2rpta" },
+                { baslik: "11. Bölüm", url: "https://s429.rapidrame.com/hls2/01/00007/z53u6z2d5xsf_,l,.urlset/master.m3u8?t=VX_phBjCaF0x8DoTH594eeex-vwo-CGI_d7L-U79V2k&s=1787509780&e=14400&f=38778&i=0.0&sp=0&n=udphr3kwav4d73c1" },
+                { baslik: "12. Bölüm", url: "https://s231.rapidrame.com/hls2/01/00007/d5k0wzq9f8hc_,l,.urlset/master.m3u8?t=z07vLzESiHS_BRFfhcF326rua0XvXsYGVy1ponBVEUA&s=1787509793&e=14400&f=38779&srv=s429&i=0.0&sp=0&n=qtbav44py9jm0d2e&p1=s231&p2=s231" },
+                { baslik: "13. Bölüm", url: "https://s429.rapidrame.com/hls2/01/00007/5fkj4f3x4nhf_,l,.urlset/master.m3u8?t=Hq26emVpUlmBOdz8DnuhiUp8Q3sgInfGMTWHwX6ZuKw&s=1787509817&e=14400&f=38781&i=0.0&sp=0&n=d487og019h0z9ion" }
+            ]
+        };
+
+        // Sezonları menüye doldur
+        function initSeasons() {
+            for (const sezon in diziVerileri) {
+                let opt = document.createElement('option');
+                opt.value = sezon;
+                opt.textContent = sezon;
+                seasonSelect.appendChild(opt);
+            }
+        }
+
+        seasonSelect.addEventListener('change', () => {
+            const secilenSezon = seasonSelect.value;
+            episodeSelect.innerHTML = '<option value="">Bölüm Seçin</option>';
+            
+            if (secilenSezon && diziVerileri[secilenSezon]) {
+                episodeSelect.disabled = false;
+                diziVerileri[secilenSezon].forEach((bolum, index) => {
+                    let opt = document.createElement('option');
+                    opt.value = index;
+                    opt.textContent = bolum.baslik;
+                    episodeSelect.appendChild(opt);
+                });
+            } else {
+                episodeSelect.disabled = true;
+            }
+        });
+
         function playHLS(url) {
             if (Hls.isSupported()) {
                 const hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Safari gibi yerel HLS desteği olan tarayıcılar için
                 video.src = url;
             }
         }
 
-        // Arayüzden "Videoyu Yükle" butonuna basıldığında
+        // Bölüm başlat butonuna basıldığında
         loadBtn.addEventListener('click', () => {
-            const url = urlInput.value.trim();
-            if (url) {
+            const sezon = seasonSelect.value;
+            const bolumIndex = episodeSelect.value;
+
+            if (sezon !== "" && bolumIndex !== "") {
+                const url = diziVerileri[sezon][bolumIndex].url;
                 playHLS(url);
                 socket.emit('change-source', { roomID, url });
+            } else {
+                alert("Lütfen bir sezon ve bölüm seçin!");
             }
         });
 
-        // Diğer kullanıcı kaynak değiştirdiğinde tetiklenir
+        // Uzaktan kaynak değişimi geldiğinde
         socket.on('remote-change-source', (url) => {
-            urlInput.value = url;
             playHLS(url);
         });
 
-        // --- YEREL VİDEO KONTROLLERİ ---
+        // --- VİDEO SENKRONİZASYON OLAYLARI ---
 
         video.addEventListener('play', () => {
             if (isUpdatingFromRemote) return;
@@ -125,16 +175,10 @@
             socket.emit('seek-video', { roomID, currentTime: video.currentTime });
         });
 
-        // --- UZAKTAN GELEN KOMUTLAR ---
-
         socket.on('remote-play', (currentTime) => {
             isUpdatingFromRemote = true;
             video.currentTime = currentTime;
-            video.play().then(() => {
-                isUpdatingFromRemote = false;
-            }).catch(() => {
-                isUpdatingFromRemote = false;
-            });
+            video.play().then(() => { isUpdatingFromRemote = false; }).catch(() => { isUpdatingFromRemote = false; });
         });
 
         socket.on('remote-pause', (currentTime) => {
@@ -149,6 +193,9 @@
             video.currentTime = currentTime;
             isUpdatingFromRemote = false;
         });
+
+        // Sayfa açıldığında sezonları yükle
+        initSeasons();
     </script>
 </body>
 </html>
