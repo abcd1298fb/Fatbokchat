@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Senkronize La Casa de Papel İzleme Odası</title>
-    <!-- HLS.js kütüphanesi -->
+    <title>Senkronize La Casa de Papel</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         body {
@@ -56,16 +55,12 @@
     <h1>La Casa de Papel - Senkronize İzleme Odası</h1>
     
     <div class="controls">
-        <!-- Sezon Seçimi -->
         <select id="seasonSelect">
             <option value="">Sezon Seçin</option>
         </select>
-
-        <!-- Bölüm Seçimi -->
         <select id="episodeSelect" disabled>
             <option value="">Önce Sezon Seçin</option>
         </select>
-
         <button id="loadBtn">Bölümü Başlat</button>
     </div>
 
@@ -73,7 +68,6 @@
         <video id="video" controls playsinline></video>
     </div>
 
-    <!-- Socket.io istemci kütüphanesi -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io({
@@ -88,9 +82,8 @@
         const roomID = "ortak-oda-1";
         socket.emit('join-room', roomID);
 
-        let isUpdatingFromRemote = false;
+        let isRemoteAction = false; // Uzaktan gelen komutları ayırt etmek için
 
-        // --- DİZİ LİSTESİ (La Casa de Papel Bölümleri) ---
         const diziVerileri = {
             "La Casa de Papel - 1. Sezon": [
                 { baslik: "8. Bölüm", url: "https://s429.rapidrame.com/hls2/01/00012/atxktqn9qw0e_,l,.urlset/master.m3u8?t=Gdg3331gbcCc6gzNHRI2nu_0m0NN8j5-SsfOsHGQ20A&s=1787509702&e=14400&f=61539&i=0.0&sp=0&n=4jyob6dgynsl6d1g" },
@@ -102,7 +95,6 @@
             ]
         };
 
-        // Sezonları menüye doldur
         function initSeasons() {
             for (const sezon in diziVerileri) {
                 let opt = document.createElement('option');
@@ -131,7 +123,10 @@
 
         function playHLS(url) {
             if (Hls.isSupported()) {
-                const hls = new Hls();
+                const hls = new Hls({
+                    maxBufferLength: 30, // Tampon belleği optimize et
+                    maxMaxBufferLength: 60
+                });
                 hls.loadSource(url);
                 hls.attachMedia(video);
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -139,7 +134,6 @@
             }
         }
 
-        // Bölüm başlat butonuna basıldığında
         loadBtn.addEventListener('click', () => {
             const sezon = seasonSelect.value;
             const bolumIndex = episodeSelect.value;
@@ -153,48 +147,49 @@
             }
         });
 
-        // Uzaktan kaynak değişimi geldiğinde
         socket.on('remote-change-source', (url) => {
             playHLS(url);
         });
 
-        // --- VİDEO SENKRONİZASYON OLAYLARI ---
+        // --- KARARLI SENKRONİZASYON ---
 
         video.addEventListener('play', () => {
-            if (isUpdatingFromRemote) return;
+            if (isRemoteAction) return;
             socket.emit('play-video', { roomID, currentTime: video.currentTime });
         });
 
         video.addEventListener('pause', () => {
-            if (isUpdatingFromRemote) return;
+            if (isRemoteAction) return;
             socket.emit('pause-video', { roomID, currentTime: video.currentTime });
         });
 
         video.addEventListener('seeked', () => {
-            if (isUpdatingFromRemote) return;
+            if (isRemoteAction) return;
             socket.emit('seek-video', { roomID, currentTime: video.currentTime });
         });
 
         socket.on('remote-play', (currentTime) => {
-            isUpdatingFromRemote = true;
-            video.currentTime = currentTime;
-            video.play().then(() => { isUpdatingFromRemote = false; }).catch(() => { isUpdatingFromRemote = false; });
+            isRemoteAction = true;
+            if (Math.abs(video.currentTime - currentTime) > 1) {
+                video.currentTime = currentTime;
+            }
+            video.play().catch(() => {});
+            setTimeout(() => { isRemoteAction = false; }, 500);
         });
 
         socket.on('remote-pause', (currentTime) => {
-            isUpdatingFromRemote = true;
+            isRemoteAction = true;
             video.currentTime = currentTime;
             video.pause();
-            isUpdatingFromRemote = false;
+            setTimeout(() => { isRemoteAction = false; }, 500);
         });
 
         socket.on('remote-seek', (currentTime) => {
-            isUpdatingFromRemote = true;
+            isRemoteAction = true;
             video.currentTime = currentTime;
-            isUpdatingFromRemote = false;
+            setTimeout(() => { isRemoteAction = false; }, 500);
         });
 
-        // Sayfa açıldığında sezonları yükle
         initSeasons();
     </script>
 </body>
