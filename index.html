@@ -67,7 +67,11 @@
     <!-- Socket.io istemci kütüphanesi -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io();
+        // Vercel üzerinde socket bağlantısını kararlı tutmak için transport ayarları eklendi
+        const socket = io({
+            transports: ['websocket', 'polling']
+        });
+
         const video = document.getElementById('video');
         const urlInput = document.getElementById('m3u8Url');
         const loadBtn = document.getElementById('loadBtn');
@@ -75,9 +79,9 @@
         const roomID = "ortak-oda-1"; // İki kişilik sabit oda
         socket.emit('join-room', roomID);
 
-        let isUpdatingFromRemote = false; // Sonsuz tetikleme döngüsünü önlemek için
+        let isUpdatingFromRemote = false; // Sonsuz döngüyü önlemek için bayrak
 
-        // M3U8 linkini yükleme fonksiyonu
+        // M3U8 linkini oynatma fonksiyonu
         function playHLS(url) {
             if (Hls.isSupported()) {
                 const hls = new Hls();
@@ -104,7 +108,7 @@
             playHLS(url);
         });
 
-        // --- YEREL VİDEO KONTROLLERİ (Karşı tarafa haber ver) ---
+        // --- YEREL VİDEO KONTROLLERİ ---
 
         video.addEventListener('play', () => {
             if (isUpdatingFromRemote) return;
@@ -121,7 +125,7 @@
             socket.emit('seek-video', { roomID, currentTime: video.currentTime });
         });
 
-        // --- UZAKTAN GELEN KOMUTLAR (Karşı tarafın hareketini uygula) ---
+        // --- UZAKTAN GELEN KOMUTLAR ---
 
         socket.on('remote-play', (currentTime) => {
             isUpdatingFromRemote = true;
